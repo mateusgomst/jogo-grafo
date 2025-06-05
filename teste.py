@@ -8,7 +8,7 @@ import time
 pygame.init()
 WIDTH, HEIGHT = 900, 700
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("RPG Boss Battle - Caminho de 5 Nós!")
+pygame.display.set_caption("PvP Graph Battle - Encontre o Melhor Caminho!")
 FONT = pygame.font.SysFont("Arial", 18)
 BIG_FONT = pygame.font.SysFont("Arial", 24, bold=True)
 TITLE_FONT = pygame.font.SysFont("Arial", 36, bold=True)
@@ -26,31 +26,40 @@ CYAN = (0, 255, 255)
 PURPLE = (128, 0, 128)
 DARK_RED = (139, 0, 0)
 LIGHT_GREEN = (144, 238, 144)
+PINK = (255, 192, 203)
 
 # Configurações do jogo
-TIME_LIMIT = 15
-BOSS_MAX_HP = 100
+TIME_LIMIT = 20
 PLAYER_MAX_HP = 150
-REQUIRED_PATH_LENGTH = 5
-BOSS_ATTACK_DAMAGE = 50
+BONUS_4_NODES = 5
+PENALTY_PER_EXTRA_NODE = 10
 
 # Estados do jogo
 MENU = 0
-PLAYING = 1
-GAME_OVER = 2
+PLAYER1_TURN = 1
+PLAYER2_TURN = 2
+COMPARISON = 3
+GAME_OVER = 4
 
 # Estado do jogo
 class GameState:
     def __init__(self):
-        self.boss_hp = BOSS_MAX_HP
-        self.player_hp = PLAYER_MAX_HP
+        self.player1_hp = PLAYER_MAX_HP
+        self.player2_hp = PLAYER_MAX_HP
         self.start_time = time.time()
-        self.game_over = False
-        self.victory = False
-        self.attempts = 0
-        self.total_damage_dealt = 0
+        self.current_player = 1
         self.state = MENU
         self.round_number = 1
+        
+        # Caminhos dos jogadores para comparação
+        self.player1_path = []
+        self.player2_path = []
+        self.player1_damage = 0
+        self.player2_damage = 0
+        
+        # Histórico da rodada
+        self.round_winner = 0
+        self.damage_dealt = 0
 
 game_state = GameState()
 
@@ -59,61 +68,44 @@ G = nx.Graph()
 positions = {}
 node_radius = 20
 path_selected = []
-optimal_path_fixed_length = []
-checked = False # True if player made a valid suboptimal attack, to show optimal path
 message = ""
-max_possible_damage = 0
 
-
-# Gerar nós em posições fixas para 15 vértices
+# Gerar nós em posições fixas para 14 vértices
 fixed_positions = [
-    (WIDTH // 2, 180),          # 0 (Player) - Top center
-
+    (WIDTH // 2, 180),          # 0 (Start) - Top center
     (WIDTH // 2 - 200, 270),    # 1
-    (WIDTH // 2, 270),          # 2
-    (WIDTH // 2 + 200, 270),    # 3
-
-    (WIDTH // 2 - 300, 360),    # 4
-    (WIDTH // 2 - 150, 360),    # 5
-    (WIDTH // 2, 360),          # 6
-    (WIDTH // 2 + 150, 360),    # 7
-    (WIDTH // 2 + 300, 360),    # 8
-
-    (WIDTH // 2 - 200, 450),    # 9
-    (WIDTH // 2, 450),          # 10
-    (WIDTH // 2 + 200, 450),    # 11
-
-    (WIDTH // 2 - 100, 540),    # 12
-    (WIDTH // 2 + 100, 540),    # 13
-    (WIDTH // 2, 610)           # 14 (Boss) - Bottom center
+    (WIDTH // 2 + 200, 270),    # 2
+    (WIDTH // 2 - 300, 320),    # 3
+    (WIDTH // 2, 320),          # 4
+    (WIDTH // 2 + 300, 320),    # 5
+    (WIDTH // 2 - 200, 390),    # 6
+    (WIDTH // 2 + 200, 390),    # 7
+    (WIDTH // 2 - 300, 450),    # 8
+    (WIDTH // 2, 450),          # 9
+    (WIDTH // 2 + 300, 450),    # 10
+    (WIDTH // 2 - 200, 540),    # 11
+    (WIDTH // 2 + 200, 540),    # 12
+    (WIDTH // 2, 610)           # 13 (End) - Bottom center
 ]
 
 for i, pos in enumerate(fixed_positions):
     G.add_node(i)
     positions[i] = pos
 
-# Adicionar arestas para o grafo de 15 nós
+# Adicionar arestas para o grafo de 14 nós
 edges = []
-# Layer 0 (Player) to Layer 1
-edges.extend([(0,1), (0,2), (0,3)])
+# Layer 0 (Start) to Layer 1
+edges.extend([(0,1), (0,2), (0,4)])
 # Layer 1 to Layer 2
-edges.extend([(1,4), (1,5), (2,5), (2,6), (2,7), (3,7), (3,8)])
+edges.extend([(1,3), (1,6), (1,4), (2,5), (2,4)])
 # Layer 2 to Layer 3
-edges.extend([(4,9), (5,9), (5,10), (6,10), (7,10), (7,11), (8,11)])
-# Layer 3 to Layer 4 (nodes 12, 13)
-edges.extend([(9,12), (10,12), (10,13), (11,13)])
-# Layer 4 to Boss (node 14)
-edges.extend([(12,14), (13,14)])
-
-# Add some intra-layer edges for more path variety
-edges.extend([(1,2), (2,3)]) # Layer 1
-edges.extend([(4,5), (5,6), (6,7), (7,8)]) # Layer 2
-edges.extend([(9,10), (10,11)]) # Layer 3
-edges.extend([(12,13)]) # Layer 4
-
-# *** MODIFICATION: Add direct edges from Layer 3 to Boss for 5-node paths ***
-edges.extend([(9,14), (10,14), (11,14)])
-
+edges.extend([(3,8), (3,6), (4,6), (4,7), (4,5), (5,7), (5,10)])
+# Layer 3 to Layer 4
+edges.extend([(6,7), (6,8), (6,11), (6,9), (7,9), (7,10), (7,12)])
+# Layer 4 to Layer 5
+edges.extend([(8,11), (9,11), (9,12), (9,13), (10,12)])
+# Layer 5 to End
+edges.extend([(11,13), (12,13)])
 
 def randomize_weights():
     """Gerar pesos aleatórios para todas as arestas"""
@@ -124,11 +116,14 @@ def randomize_weights():
 
 randomize_weights()
 
-player_node = 0
-boss_node = 14
+start_node = 0
+end_node = 13
 
 def calculate_weight(path):
     """Calcular o peso total de um caminho"""
+    if len(path) < 2:
+        return 0
+    
     total = 0
     for i in range(len(path)-1):
         u, v_node = path[i], path[i+1]
@@ -138,58 +133,45 @@ def calculate_weight(path):
             return 0
     return total
 
-def find_best_path_of_length(graph, start, end, length_req):
-    """Encontrar o caminho com maior peso para um comprimento específico de nós"""
-    all_valid_paths = []
-    # print(f"DEBUG: Finding paths from {start} to {end} of length {length_req}")
-    for path in nx.all_simple_paths(graph, source=start, target=end):
-        if len(path) == length_req:
-            all_valid_paths.append(path)
+def calculate_final_damage(path):
+    """Calcular dano final considerando bônus e penalidades"""
+    base_damage = calculate_weight(path)
+    if base_damage == 0:
+        return 0
     
-    # print(f"DEBUG: Found {len(all_valid_paths)} paths of length {length_req}")
-    if not all_valid_paths:
-        # print(f"DEBUG: No paths of length {length_req} found.")
-        return []
+    path_length = len(path)
     
-    max_w = -1
-    best_p = []
-    
-    for p in all_valid_paths:
-        w = calculate_weight(p)
-        if w > max_w:
-            max_w = w
-            best_p = p
-            
-    # print(f"DEBUG: Best path of length {length_req} is {best_p} with weight {max_w}")
-    return best_p
-
-def update_optimal_path_info():
-    """Atualizar o caminho ótimo de comprimento fixo e seu dano"""
-    global optimal_path_fixed_length, max_possible_damage
-    optimal_path_fixed_length = find_best_path_of_length(G, player_node, boss_node, REQUIRED_PATH_LENGTH)
-    max_possible_damage = calculate_weight(optimal_path_fixed_length) if optimal_path_fixed_length else 0
+    if path_length == 4:
+        return base_damage + BONUS_4_NODES
+    elif path_length == 5:
+        return base_damage
+    elif path_length > 5:
+        penalty = (path_length - 5) * PENALTY_PER_EXTRA_NODE
+        return max(0, base_damage - penalty)
+    else:
+        return base_damage
 
 start_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 150, 200, 60)
 
 def draw_menu():
     screen.fill((20, 20, 40))
-    title_text = TITLE_FONT.render("RPG BOSS BATTLE", True, YELLOW)
+    title_text = TITLE_FONT.render("PvP GRAPH BATTLE", True, YELLOW)
     title_rect = title_text.get_rect(center=(WIDTH//2, HEIGHT//2 - 200))
     screen.blit(title_text, title_rect)
     
-    subtitle_text = BIG_FONT.render(f"Encontre o Caminho de {REQUIRED_PATH_LENGTH} Nós de Maior Dano!", True, WHITE)
+    subtitle_text = BIG_FONT.render("Duelo de Caminhos!", True, WHITE)
     subtitle_rect = subtitle_text.get_rect(center=(WIDTH//2, HEIGHT//2 - 150))
     screen.blit(subtitle_text, subtitle_rect)
     
     instructions = [
-        f"- Clique em {REQUIRED_PATH_LENGTH} nós conectados para traçar um caminho.",
-        "- Pressione ENTER para atacar o boss.",
-        "- Encontre o caminho com MAIOR peso para maximizar dano.",
-        "- Você tem 15 segundos por rodada.",
-        "- O Boss ataca com 50 de dano após sua ação!",
-        "- Cronômetro reinicia a cada ataque bem-sucedido.",
-        f"- Sua HP inicial: {PLAYER_MAX_HP}.",
-        "- Derrote o boss antes que sua HP chegue a zero!"
+        "- Jogador 1 (AZUL) vs Jogador 2 (ROSA)",
+        "- Cada jogador faz seu caminho do nó 0 ao nó 13",
+        "- O caminho com MAIOR peso vence a rodada",
+        "- Apenas o perdedor recebe dano",
+        "- Bônus: Caminhos de 4 nós (+5 dano)",
+        "- Normal: Caminhos de 5 nós (dano normal)",
+        "- Penalidade: Caminhos >5 nós (-10 por nó extra)",
+        "- 20 segundos por turno"
     ]
     
     for i, instruction in enumerate(instructions):
@@ -205,51 +187,60 @@ def draw_menu():
     
     pygame.display.flip()
 
+def get_current_player_color():
+    return BLUE if game_state.current_player == 1 else PINK
+
 def draw_hud():
     pygame.draw.rect(screen, (50, 50, 50), (10, 10, WIDTH-20, 120))
     pygame.draw.rect(screen, WHITE, (10, 10, WIDTH-20, 120), 2)
     
+    # Rodada e turno atual
     round_text = BIG_FONT.render(f"Rodada: {game_state.round_number}", True, YELLOW)
     screen.blit(round_text, (20, 20))
     
+    current_player_color = get_current_player_color()
+    turn_text = BIG_FONT.render(f"Turno: Jogador {game_state.current_player}", True, current_player_color)
+    screen.blit(turn_text, (200, 20))
+    
+    # Timer
     elapsed = time.time() - game_state.start_time
     remaining = max(0, TIME_LIMIT - elapsed)
     time_color = RED if remaining < 5 else WHITE
     time_text = BIG_FONT.render(f"Tempo: {remaining:.1f}s", True, time_color)
-    screen.blit(time_text, (220, 20))
+    screen.blit(time_text, (420, 20))
     
-    boss_hp_percent = game_state.boss_hp / BOSS_MAX_HP if BOSS_MAX_HP > 0 else 0
-    bar_width = 200
+    # HP dos jogadores
+    bar_width = 180
     bar_height = 20
+    
+    # Player 1 HP
+    player1_hp_percent = game_state.player1_hp / PLAYER_MAX_HP if PLAYER_MAX_HP > 0 else 0
     pygame.draw.rect(screen, RED, (20, 50, bar_width, bar_height))
-    pygame.draw.rect(screen, GREEN, (20, 50, bar_width * boss_hp_percent, bar_height))
+    pygame.draw.rect(screen, BLUE, (20, 50, bar_width * player1_hp_percent, bar_height))
     pygame.draw.rect(screen, WHITE, (20, 50, bar_width, bar_height), 2)
-    boss_text = FONT.render(f"Boss HP: {game_state.boss_hp}/{BOSS_MAX_HP}", True, WHITE)
-    screen.blit(boss_text, (230, 52))
+    player1_text = FONT.render(f"Jogador 1: {game_state.player1_hp}/{PLAYER_MAX_HP}", True, WHITE)
+    screen.blit(player1_text, (210, 52))
     
-    player_hp_percent = game_state.player_hp / PLAYER_MAX_HP if PLAYER_MAX_HP > 0 else 0
+    # Player 2 HP
+    player2_hp_percent = game_state.player2_hp / PLAYER_MAX_HP if PLAYER_MAX_HP > 0 else 0
     pygame.draw.rect(screen, RED, (20, 80, bar_width, bar_height))
-    pygame.draw.rect(screen, BLUE, (20, 80, bar_width * player_hp_percent, bar_height))
+    pygame.draw.rect(screen, PINK, (20, 80, bar_width * player2_hp_percent, bar_height))
     pygame.draw.rect(screen, WHITE, (20, 80, bar_width, bar_height), 2)
-    player_text = FONT.render(f"Sua HP: {game_state.player_hp}/{PLAYER_MAX_HP}", True, WHITE)
-    screen.blit(player_text, (230, 82))
+    player2_text = FONT.render(f"Jogador 2: {game_state.player2_hp}/{PLAYER_MAX_HP}", True, WHITE)
+    screen.blit(player2_text, (210, 82))
     
-    attempts_text = FONT.render(f"Tentativas: {game_state.attempts}", True, WHITE)
-    screen.blit(attempts_text, (450, 25))
+    # Dicas
+    bonus_text = FONT.render("4 nós: +5 | 5 nós: normal | >5 nós: -10/extra", True, CYAN)
+    screen.blit(bonus_text, (420, 52))
     
-    damage_text = FONT.render(f"Dano Total: {game_state.total_damage_dealt}", True, WHITE)
-    screen.blit(damage_text, (450, 50))
-    
-    hint_text = FONT.render(f"Dano Max. ({REQUIRED_PATH_LENGTH} nós): {max_possible_damage}", True, YELLOW)
-    screen.blit(hint_text, (450, 75))
-    
-    reset_text = FONT.render("ESPACO para novos pesos", True, CYAN)
-    screen.blit(reset_text, (680, 25))
+    reset_text = FONT.render("ESPAÇO: novos pesos", True, GRAY)
+    screen.blit(reset_text, (420, 82))
 
 def draw_game():
     screen.fill((20, 20, 40))
     draw_hud()
 
+    # Desenhar arestas e pesos
     for u, v_node in G.edges():
         pygame.draw.line(screen, GRAY, positions[u], positions[v_node], 2)
         mx = (positions[u][0] + positions[v_node][0]) // 2
@@ -260,46 +251,44 @@ def draw_game():
         text_rect = text_surf.get_rect(center=(mx, my))
         screen.blit(text_surf, text_rect)
 
-    # Player's currently selected path
+    # Desenhar caminho atual do jogador
+    current_color = get_current_player_color()
     for i in range(len(path_selected)-1):
-        pygame.draw.line(screen, CYAN, positions[path_selected[i]], positions[path_selected[i+1]], 5)
+        pygame.draw.line(screen, current_color, positions[path_selected[i]], positions[path_selected[i+1]], 5)
 
-    # Show optimal path in yellow if 'checked' is true (player made a valid suboptimal attack)
-    if checked and optimal_path_fixed_length and not game_state.victory :
-        for i in range(len(optimal_path_fixed_length)-1):
-            start_pos = positions[optimal_path_fixed_length[i]]
-            end_pos = positions[optimal_path_fixed_length[i+1]]
-            num_dashes = 10
-            for j in range(num_dashes):
-                if j % 2 == 0: 
-                    t0 = j / num_dashes
-                    t1 = (j + 0.5) / num_dashes 
-                    pt1 = (start_pos[0] * (1-t0) + end_pos[0] * t0, 
-                           start_pos[1] * (1-t0) + end_pos[1] * t0)
-                    pt2 = (start_pos[0] * (1-t1) + end_pos[0] * t1, 
-                           start_pos[1] * (1-t1) + end_pos[1] * t1)
-                    pygame.draw.line(screen, YELLOW, pt1, pt2, 3)
-
+    # Desenhar nós
     for node, pos in positions.items():
         is_selected = node in path_selected
-        is_player = node == player_node
-        is_boss = node == boss_node
+        is_start = node == start_node
+        is_end = node == end_node
         
         color = GREEN
         text_color = BLACK
         
-        if is_player: color = CYAN
-        elif is_boss: color = DARK_RED if game_state.boss_hp > 0 else GRAY; text_color = WHITE
-        elif is_selected: color = YELLOW
+        if is_start: 
+            color = CYAN
+        elif is_end: 
+            color = ORANGE
+        elif is_selected: 
+            color = current_color
             
         pygame.draw.circle(screen, color, pos, node_radius)
         pygame.draw.circle(screen, WHITE, pos, node_radius, 2)
         
-        node_label = "P" if is_player else ("B" if is_boss else str(node))
+        node_label = "S" if is_start else ("E" if is_end else str(node))
         text = FONT.render(node_label, True, text_color)
         text_rect = text.get_rect(center=pos)
         screen.blit(text, text_rect)
 
+    # Mostrar informações do caminho atual
+    if path_selected:
+        base_damage = calculate_weight(path_selected)
+        final_damage = calculate_final_damage(path_selected)
+        path_info = f"Caminho: {' -> '.join(map(str, path_selected))} | Base: {base_damage} | Final: {final_damage}"
+        info_text = FONT.render(path_info, True, current_color)
+        screen.blit(info_text, (20, 140))
+
+    # Mostrar mensagem
     if message:
         msg_surface = FONT.render(message, True, WHITE)
         msg_rect = msg_surface.get_rect()
@@ -311,6 +300,73 @@ def draw_game():
 
     pygame.display.flip()
 
+def draw_comparison():
+    screen.fill((20, 20, 40))
+    draw_hud()
+
+    # Desenhar arestas
+    for u, v_node in G.edges():
+        pygame.draw.line(screen, GRAY, positions[u], positions[v_node], 2)
+
+    # Desenhar caminho do Jogador 1
+    if game_state.player1_path:
+        for i in range(len(game_state.player1_path)-1):
+            pygame.draw.line(screen, BLUE, positions[game_state.player1_path[i]], positions[game_state.player1_path[i+1]], 4)
+
+    # Desenhar caminho do Jogador 2
+    if game_state.player2_path:
+        for i in range(len(game_state.player2_path)-1):
+            pygame.draw.line(screen, PINK, positions[game_state.player2_path[i]], positions[game_state.player2_path[i+1]], 4)
+
+    # Desenhar nós
+    for node, pos in positions.items():
+        is_start = node == start_node
+        is_end = node == end_node
+        
+        color = GREEN
+        text_color = BLACK
+        
+        if is_start: 
+            color = CYAN
+        elif is_end: 
+            color = ORANGE
+            
+        pygame.draw.circle(screen, color, pos, node_radius)
+        pygame.draw.circle(screen, WHITE, pos, node_radius, 2)
+        
+        node_label = "S" if is_start else ("E" if is_end else str(node))
+        text = FONT.render(node_label, True, text_color)
+        text_rect = text.get_rect(center=pos)
+        screen.blit(text, text_rect)
+
+    # Mostrar comparação
+    y_offset = 140
+    
+    # Jogador 1
+    p1_text = f"Jogador 1 (AZUL): {' -> '.join(map(str, game_state.player1_path)) if game_state.player1_path else 'SEM CAMINHO'}"
+    p1_damage_text = f"Dano Final: {game_state.player1_damage}"
+    screen.blit(FONT.render(p1_text, True, BLUE), (20, y_offset))
+    screen.blit(FONT.render(p1_damage_text, True, BLUE), (20, y_offset + 25))
+    
+    # Jogador 2
+    p2_text = f"Jogador 2 (ROSA): {' -> '.join(map(str, game_state.player2_path)) if game_state.player2_path else 'SEM CAMINHO'}"
+    p2_damage_text = f"Dano Final: {game_state.player2_damage}"
+    screen.blit(FONT.render(p2_text, True, PINK), (20, y_offset + 60))
+    screen.blit(FONT.render(p2_damage_text, True, PINK), (20, y_offset + 85))
+    
+    # Resultado
+    if game_state.round_winner > 0:
+        winner_color = BLUE if game_state.round_winner == 1 else PINK
+        winner_text = f"VENCEDOR: Jogador {game_state.round_winner}! Dano causado: {game_state.damage_dealt}"
+        screen.blit(BIG_FONT.render(winner_text, True, winner_color), (20, y_offset + 120))
+    elif game_state.player1_damage == game_state.player2_damage and game_state.player1_damage > 0:
+        screen.blit(BIG_FONT.render("EMPATE! Nenhum jogador recebe dano.", True, YELLOW), (20, y_offset + 120))
+    
+    continue_text = "Pressione ENTER para continuar..."
+    screen.blit(FONT.render(continue_text, True, WHITE), (20, HEIGHT - 60))
+
+    pygame.display.flip()
+
 def draw_game_over():
     screen.fill((20, 20, 40))
     overlay = pygame.Surface((WIDTH, HEIGHT))
@@ -318,25 +374,31 @@ def draw_game_over():
     overlay.fill(BLACK)
     screen.blit(overlay, (0, 0))
     
-    if game_state.victory:
-        end_text = TITLE_FONT.render("VITORIA!", True, GREEN)
-        sub_text = BIG_FONT.render("Boss Derrotado!", True, GREEN)
+    # Determinar vencedor
+    if game_state.player1_hp <= 0:
+        winner_text = TITLE_FONT.render("JOGADOR 2 VENCEU!", True, PINK)
+        loser_text = "Jogador 1 foi derrotado!"
+    elif game_state.player2_hp <= 0:
+        winner_text = TITLE_FONT.render("JOGADOR 1 VENCEU!", True, BLUE)
+        loser_text = "Jogador 2 foi derrotado!"
     else:
-        end_text = TITLE_FONT.render("DERROTA!", True, RED)
-        sub_text = BIG_FONT.render("Tempo Esgotado ou HP Zerada!", True, RED)
+        winner_text = TITLE_FONT.render("TEMPO ESGOTADO!", True, RED)
+        loser_text = "Jogo encerrado por tempo!"
     
-    end_rect = end_text.get_rect(center=(WIDTH//2, HEIGHT//2 - 100))
-    screen.blit(end_text, end_rect)
-    sub_rect = sub_text.get_rect(center=(WIDTH//2, HEIGHT//2 - 50))
-    screen.blit(sub_text, sub_rect)
+    winner_rect = winner_text.get_rect(center=(WIDTH//2, HEIGHT//2 - 100))
+    screen.blit(winner_text, winner_rect)
     
-    stats_text = BIG_FONT.render(f"Tentativas: {game_state.attempts} | Dano Total: {game_state.total_damage_dealt}", True, WHITE)
+    loser_surface = BIG_FONT.render(loser_text, True, WHITE)
+    loser_rect = loser_surface.get_rect(center=(WIDTH//2, HEIGHT//2 - 50))
+    screen.blit(loser_surface, loser_rect)
+    
+    stats_text = BIG_FONT.render(f"Rodadas Completadas: {game_state.round_number}", True, WHITE)
     stats_rect = stats_text.get_rect(center=(WIDTH//2, HEIGHT//2))
     screen.blit(stats_text, stats_rect)
     
-    rounds_text = BIG_FONT.render(f"Rodadas Completadas: {game_state.round_number -1 if game_state.round_number > 1 else game_state.round_number}", True, WHITE)
-    rounds_rect = rounds_text.get_rect(center=(WIDTH//2, HEIGHT//2 + 30))
-    screen.blit(rounds_text, rounds_rect)
+    hp_text = BIG_FONT.render(f"HP Final - J1: {game_state.player1_hp} | J2: {game_state.player2_hp}", True, WHITE)
+    hp_rect = hp_text.get_rect(center=(WIDTH//2, HEIGHT//2 + 30))
+    screen.blit(hp_text, hp_rect)
     
     restart_text = BIG_FONT.render("Pressione R para Voltar ao Menu", True, YELLOW)
     restart_rect = restart_text.get_rect(center=(WIDTH//2, HEIGHT//2 + 80))
@@ -353,66 +415,114 @@ def get_node_clicked(pos):
 
 def check_time():
     elapsed = time.time() - game_state.start_time
-    if elapsed >= TIME_LIMIT and game_state.state == PLAYING:
-        game_state.player_hp = max(0, game_state.player_hp - BOSS_ATTACK_DAMAGE)
-        global message
-        timeout_msg = f"Tempo esgotado! Boss atacou ({BOSS_ATTACK_DAMAGE} dano)."
-        if game_state.player_hp <= 0:
-             message = timeout_msg + " Sua HP chegou a zero!"
-        else:
-             message = timeout_msg + " Você perdeu a chance de atacar."
-        game_state.state = GAME_OVER
+    if elapsed >= TIME_LIMIT:
         return True
     return False
 
 def reset_timer():
     game_state.start_time = time.time()
 
+def is_valid_path(path):
+    """Verificar se o caminho é válido (conectado e vai do início ao fim)"""
+    if len(path) < 2:
+        return False
+    if path[0] != start_node or path[-1] != end_node:
+        return False
+    
+    for i in range(len(path)-1):
+        if not G.has_edge(path[i], path[i+1]):
+            return False
+    return True
+
+def compare_paths():
+    """Comparar os caminhos dos dois jogadores e determinar vencedor"""
+    global message
+    
+    # Calcular danos finais
+    game_state.player1_damage = calculate_final_damage(game_state.player1_path) if is_valid_path(game_state.player1_path) else 0
+    game_state.player2_damage = calculate_final_damage(game_state.player2_path) if is_valid_path(game_state.player2_path) else 0
+    
+    # Determinar vencedor
+    if game_state.player1_damage > game_state.player2_damage:
+        game_state.round_winner = 1
+        game_state.damage_dealt = game_state.player1_damage
+        game_state.player2_hp = max(0, game_state.player2_hp - game_state.damage_dealt)
+    elif game_state.player2_damage > game_state.player1_damage:
+        game_state.round_winner = 2
+        game_state.damage_dealt = game_state.player2_damage
+        game_state.player1_hp = max(0, game_state.player1_hp - game_state.damage_dealt)
+    else:
+        game_state.round_winner = 0  # Empate
+        game_state.damage_dealt = 0
+
+def next_turn():
+    """Passar para o próximo turno ou fase"""
+    global path_selected, message
+    
+    if game_state.state == PLAYER1_TURN:
+        # Salvar caminho do jogador 1
+        game_state.player1_path = list(path_selected)
+        path_selected = []
+        game_state.current_player = 2
+        game_state.state = PLAYER2_TURN
+        reset_timer()
+        message = f"Turno do Jogador 2! Faça seu melhor caminho."
+        
+    elif game_state.state == PLAYER2_TURN:
+        # Salvar caminho do jogador 2 e comparar
+        game_state.player2_path = list(path_selected)
+        path_selected = []
+        compare_paths()
+        game_state.state = COMPARISON
+        message = "Comparando caminhos..."
+
 def start_new_round():
-    global checked, path_selected, message
+    """Iniciar nova rodada"""
+    global message, path_selected
+    
     randomize_weights()
-    update_optimal_path_info()
-    reset_timer()
     game_state.round_number += 1
+    game_state.current_player = 1
+    game_state.state = PLAYER1_TURN
+    game_state.player1_path = []
+    game_state.player2_path = []
+    game_state.player1_damage = 0
+    game_state.player2_damage = 0
+    game_state.round_winner = 0
+    game_state.damage_dealt = 0
     path_selected = []
-    checked = False # Reset checked flag for new round
-    # Message is set by the K_RETURN logic or start_game
+    reset_timer()
+    message = f"Rodada {game_state.round_number}! Turno do Jogador 1."
 
 def reset_game():
-    global game_state, path_selected, checked, message
+    global game_state, path_selected, message
     game_state = GameState()
     randomize_weights()
-    update_optimal_path_info()
     path_selected = []
-    checked = False # Reset checked flag
-    game_state.state = MENU
     message = ""
 
 def start_game():
-    global game_state, message, checked
-    if game_state.state == MENU: 
-        game_state = GameState()
-    
-    game_state.state = PLAYING
+    global message
+    game_state.state = PLAYER1_TURN
+    game_state.current_player = 1
     randomize_weights()
-    update_optimal_path_info()
     reset_timer()
-    checked = False # Reset checked flag
-    message = f"Rodada {game_state.round_number}! Encontre o caminho de {REQUIRED_PATH_LENGTH} nós de MAIOR DANO!"
+    message = f"Rodada {game_state.round_number}! Turno do Jogador 1 - Encontre o melhor caminho!"
 
-update_optimal_path_info()
-
+# Inicialização
 running = True
 clock = pygame.time.Clock()
 
 while running:
     if game_state.state == MENU:
         draw_menu()
-    elif game_state.state == PLAYING:
-        if check_time(): 
-            draw_game_over() 
+    elif game_state.state in [PLAYER1_TURN, PLAYER2_TURN]:
+        if check_time():
+            next_turn()
         else:
             draw_game()
+    elif game_state.state == COMPARISON:
+        draw_comparison()
     elif game_state.state == GAME_OVER:
         draw_game_over()
     
@@ -424,100 +534,47 @@ while running:
             if game_state.state == MENU:
                 if start_button.collidepoint(event.pos):
                     start_game()
-            elif game_state.state == PLAYING:
+            elif game_state.state in [PLAYER1_TURN, PLAYER2_TURN]:
                 node = get_node_clicked(event.pos)
                 if node is not None:
-                    if not path_selected and node == player_node:
+                    if not path_selected and node == start_node:
                         path_selected.append(node)
-                        message = f"Nó inicial {node} selecionado. Continue até o Boss ({boss_node})."
-                        checked = False # Player is building a new path
+                        message = f"Jogador {game_state.current_player}: Nó inicial selecionado. Continue até o nó final ({end_node})."
                     elif path_selected and node not in path_selected: 
                         if G.has_edge(path_selected[-1], node):
                              path_selected.append(node)
-                             message = f"Caminho atual: {' -> '.join(map(str, path_selected))}"
-                             if len(path_selected) == REQUIRED_PATH_LENGTH:
-                                 message += ". Pressione ENTER para atacar!"
-                             checked = False # Player is building a new path
+                             message = f"Jogador {game_state.current_player}: {' -> '.join(map(str, path_selected))}"
+                             if node == end_node:
+                                 message += ". Pressione ENTER para confirmar!"
                         else:
-                            message = "Nó não conectado ao anterior!"
+                            message = f"Jogador {game_state.current_player}: Nó não conectado ao anterior!"
                     elif node in path_selected:
-                        message = "Nó já selecionado no caminho atual."
-
+                        message = f"Jogador {game_state.current_player}: Nó já selecionado no caminho atual."
 
         elif event.type == pygame.KEYDOWN:
-            if game_state.state == PLAYING:
+            if game_state.state in [PLAYER1_TURN, PLAYER2_TURN]:
                 if event.key == pygame.K_RETURN:
-                    if len(path_selected) < 2 : 
-                        message = "Caminho muito curto para atacar!"
-                        path_selected = [] # Clear invalid path
-                        checked = False # No valid attempt
-                        continue 
-
-                    game_state.attempts += 1
+                    if len(path_selected) < 2 or path_selected[0] != start_node or path_selected[-1] != end_node:
+                        message = f"Jogador {game_state.current_player}: Caminho deve ir do nó {start_node} ao nó {end_node}!"
+                        continue
                     
-                    action_message = ""
-                    damage_this_turn = 0
-                    penalty_this_turn = 0
+                    next_turn()
                     
-                    player_submitted_path = list(path_selected) # Store current path for checks
-
-                    if len(player_submitted_path) != REQUIRED_PATH_LENGTH:
-                        action_message = f"Falha! Caminho deve ter {REQUIRED_PATH_LENGTH} nós."
-                        checked = False # Invalid attempt
-                    elif player_submitted_path[0] != player_node or player_submitted_path[-1] != boss_node:
-                        action_message = f"Falha! Caminho de P ({player_node}) para B ({boss_node})."
-                        checked = False # Invalid attempt
-                    else:
-                        # Caminho Válido para ataque
-                        damage_this_turn = calculate_weight(player_submitted_path)
-                        game_state.total_damage_dealt += damage_this_turn
-                        game_state.boss_hp = max(0, game_state.boss_hp - damage_this_turn)
-
-                        if player_submitted_path != optimal_path_fixed_length:
-                            penalty_this_turn = 15 
-                            game_state.player_hp = max(0, game_state.player_hp - penalty_this_turn)
-                            action_message = f"Dano: {damage_this_turn}. Perdeu {penalty_this_turn} HP (não ótimo)."
-                            if optimal_path_fixed_length: # Only set checked if there IS an optimal path to show
-                                checked = True # Suboptimal valid attack, show optimal
-                            else:
-                                checked = False # No optimal path to compare against
-                        else:
-                            action_message = f"CRÍTICO! Dano: {damage_this_turn}. Caminho perfeito!"
-                            checked = False # Optimal attack, no need to highlight
-                    
-                    current_message_parts = [action_message]
-                    path_selected = [] # Clear path AFTER all checks and message determination
-
-                    if game_state.boss_hp <= 0:
-                        game_state.victory = True
-                        game_state.state = GAME_OVER
-                        current_message_parts.append("BOSS DERROTADO!")
-                        message = " ".join(filter(None, current_message_parts))
-                    else:
-                        game_state.player_hp = max(0, game_state.player_hp - BOSS_ATTACK_DAMAGE)
-                        current_message_parts.append(f"Boss revidou: -{BOSS_ATTACK_DAMAGE} HP.")
-
-                        if game_state.player_hp <= 0:
-                            game_state.state = GAME_OVER
-                            current_message_parts.append("Sua HP chegou a zero!")
-                            message = " ".join(filter(None, current_message_parts))
-                        else:
-                            old_round_number = game_state.round_number
-                            start_new_round() # This will reset 'checked' to False
-                            
-                            new_round_msg = f"Rodada {game_state.round_number}! Novos pesos. Encontre o caminho de {REQUIRED_PATH_LENGTH} nós!"
-                            current_message_parts.append(new_round_msg)
-                            message = " ".join(filter(None, current_message_parts))
-
-
                 elif event.key == pygame.K_SPACE:
-                    start_new_round() # This will reset 'checked' to False
-                    message = f"Pesos randomizados manualmente! Rodada {game_state.round_number}."
-
+                    randomize_weights()
+                    message = f"Jogador {game_state.current_player}: Pesos randomizados!"
+                    
+            elif game_state.state == COMPARISON:
+                if event.key == pygame.K_RETURN:
+                    # Verificar se alguém morreu
+                    if game_state.player1_hp <= 0 or game_state.player2_hp <= 0:
+                        game_state.state = GAME_OVER
+                    else:
+                        start_new_round()
 
             elif game_state.state == GAME_OVER: 
                  if event.key == pygame.K_r:
-                    reset_game() 
+                    reset_game()
 
     clock.tick(60)
 
