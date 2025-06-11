@@ -28,49 +28,49 @@ DARK_RED = (139, 0, 0)
 LIGHT_GREEN = (144, 238, 144)
 PINK = (255, 192, 203)
 
-# Configurações do jogo
-TIME_LIMIT = 20
-PLAYER_MAX_HP = 150
-BONUS_4_NODES = 5
-PENALTY_PER_EXTRA_NODE = 10
+# CONFIGURAÇÕES PRINCIPAIS DO JOGO
+TIME_LIMIT = 20  # Tempo limite por turno em segundos
+PLAYER_MAX_HP = 150  # HP máximo de cada jogador
+BONUS_4_NODES = 5  # Bônus para caminhos de exatamente 4 nós
+PENALTY_PER_EXTRA_NODE = 10  # Penalidade por cada nó extra além de 5
 
-# Estados do jogo
+# ESTADOS DO JOGO - Controla o fluxo do jogo
 MENU = 0
 PLAYER1_TURN = 1
 PLAYER2_TURN = 2
 COMPARISON = 3
 GAME_OVER = 4
 
-# Estado do jogo
+# CLASSE PRINCIPAL QUE GERENCIA O ESTADO DO JOGO
 class GameState:
     def __init__(self):
         self.player1_hp = PLAYER_MAX_HP
         self.player2_hp = PLAYER_MAX_HP
-        self.start_time = time.time()
+        self.start_time = time.time()  # Para controle do timer
         self.current_player = 1
         self.state = MENU
         self.round_number = 1
         
-        # Caminhos dos jogadores para comparação
+        # Armazena os caminhos escolhidos pelos jogadores
         self.player1_path = []
         self.player2_path = []
         self.player1_damage = 0
         self.player2_damage = 0
         
-        # Histórico da rodada
+        # Resultado da rodada
         self.round_winner = 0
         self.damage_dealt = 0
 
 game_state = GameState()
 
-# Grafo
-G = nx.Graph()
-positions = {}
+# CONFIGURAÇÃO DO GRAFO
+G = nx.Graph()  # Grafo não-direcionado usando NetworkX
+positions = {}  # Posições dos nós na tela
 node_radius = 20
-path_selected = []
+path_selected = []  # Caminho atual sendo construído
 message = ""
 
-# Gerar nós em posições fixas para 14 vértices
+# POSIÇÕES FIXAS DOS NÓS - Layout estratégico em camadas
 fixed_positions = [
     (WIDTH // 2, 180),          # 0 (Start) - Top center
     (WIDTH // 2 - 200, 270),    # 1
@@ -88,11 +88,12 @@ fixed_positions = [
     (WIDTH // 2, 610)           # 13 (End) - Bottom center
 ]
 
+# Criar nós no grafo
 for i, pos in enumerate(fixed_positions):
     G.add_node(i)
     positions[i] = pos
 
-# Adicionar arestas para o grafo de 14 nós
+# DEFINIÇÃO DAS CONEXÕES DO GRAFO - Estrutura em camadas
 edges = []
 # Layer 0 (Start) to Layer 1
 edges.extend([(0,1), (0,2), (0,4)])
@@ -108,19 +109,19 @@ edges.extend([(8,11), (9,11), (9,12), (9,13), (10,12)])
 edges.extend([(11,13), (12,13)])
 
 def randomize_weights():
-    """Gerar pesos aleatórios para todas as arestas"""
+    """FUNÇÃO CRÍTICA: Gera pesos aleatórios para as arestas a cada rodada"""
     G.remove_edges_from(list(G.edges())) 
     for u, v_node in edges: 
-        damage = random.randint(8, 25)
+        damage = random.randint(8, 25)  # Dano aleatório entre 8-25
         G.add_edge(u, v_node, weight=damage)
 
 randomize_weights()
 
-start_node = 0
-end_node = 13
+start_node = 0  # Nó inicial
+end_node = 13   # Nó final
 
 def calculate_weight(path):
-    """Calcular o peso total de um caminho"""
+    """Calcula o peso total (dano base) de um caminho"""
     if len(path) < 2:
         return 0
     
@@ -130,30 +131,32 @@ def calculate_weight(path):
         if G.has_edge(u, v_node):
             total += G[u][v_node]['weight']
         else:
-            return 0
+            return 0  # Caminho inválido
     return total
 
 def calculate_final_damage(path):
-    """Calcular dano final considerando bônus e penalidades"""
+    """FUNÇÃO ESTRATÉGICA: Calcula dano final com bônus/penalidades"""
     base_damage = calculate_weight(path)
     if base_damage == 0:
         return 0
     
     path_length = len(path)
     
+    # Sistema de bônus/penalidades baseado no comprimento do caminho
     if path_length == 4:
-        return base_damage + BONUS_4_NODES
+        return base_damage + BONUS_4_NODES  # Bônus para caminhos curtos
     elif path_length == 5:
-        return base_damage
+        return base_damage  # Comprimento ideal
     elif path_length > 5:
         penalty = (path_length - 5) * PENALTY_PER_EXTRA_NODE
-        return max(0, base_damage - penalty)
+        return max(0, base_damage - penalty)  # Penalidade para caminhos longos
     else:
         return base_damage
 
 start_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 150, 200, 60)
 
 def draw_menu():
+    """Desenha a tela do menu com instruções"""
     screen.fill((20, 20, 40))
     title_text = TITLE_FONT.render("PvP GRAPH BATTLE", True, YELLOW)
     title_rect = title_text.get_rect(center=(WIDTH//2, HEIGHT//2 - 200))
@@ -163,6 +166,7 @@ def draw_menu():
     subtitle_rect = subtitle_text.get_rect(center=(WIDTH//2, HEIGHT//2 - 150))
     screen.blit(subtitle_text, subtitle_rect)
     
+    # Instruções do jogo
     instructions = [
         "- Jogador 1 (AZUL) vs Jogador 2 (ROSA)",
         "- Cada jogador faz seu caminho do nó 0 ao nó 13",
@@ -188,9 +192,11 @@ def draw_menu():
     pygame.display.flip()
 
 def get_current_player_color():
+    """Retorna a cor do jogador atual"""
     return BLUE if game_state.current_player == 1 else PINK
 
 def draw_hud():
+    """Desenha a interface com HP, timer e informações"""
     pygame.draw.rect(screen, (50, 50, 50), (10, 10, WIDTH-20, 120))
     pygame.draw.rect(screen, WHITE, (10, 10, WIDTH-20, 120), 2)
     
@@ -202,14 +208,14 @@ def draw_hud():
     turn_text = BIG_FONT.render(f"Turno: Jogador {game_state.current_player}", True, current_player_color)
     screen.blit(turn_text, (200, 20))
     
-    # Timer
+    # TIMER - Controle de tempo por turno
     elapsed = time.time() - game_state.start_time
     remaining = max(0, TIME_LIMIT - elapsed)
     time_color = RED if remaining < 5 else WHITE
     time_text = BIG_FONT.render(f"Tempo: {remaining:.1f}s", True, time_color)
     screen.blit(time_text, (420, 20))
     
-    # HP dos jogadores
+    # BARRAS DE HP - Visualização da vida dos jogadores
     bar_width = 180
     bar_height = 20
     
@@ -229,7 +235,7 @@ def draw_hud():
     player2_text = FONT.render(f"Jogador 2: {game_state.player2_hp}/{PLAYER_MAX_HP}", True, WHITE)
     screen.blit(player2_text, (210, 82))
     
-    # Dicas
+    # Dicas estratégicas
     bonus_text = FONT.render("4 nós: +5 | 5 nós: normal | >5 nós: -10/extra", True, CYAN)
     screen.blit(bonus_text, (420, 52))
     
@@ -237,26 +243,28 @@ def draw_hud():
     screen.blit(reset_text, (420, 82))
 
 def draw_game():
+    """Desenha a tela principal do jogo durante os turnos"""
     screen.fill((20, 20, 40))
     draw_hud()
 
-    # Desenhar arestas e pesos
+    # Desenhar arestas e seus pesos
     for u, v_node in G.edges():
         pygame.draw.line(screen, GRAY, positions[u], positions[v_node], 2)
         mx = (positions[u][0] + positions[v_node][0]) // 2
         my = (positions[u][1] + positions[v_node][1]) // 2
         weight = G[u][v_node]['weight']
         
+        # Mostrar peso da aresta
         text_surf = FONT.render(str(weight), True, WHITE)
         text_rect = text_surf.get_rect(center=(mx, my))
         screen.blit(text_surf, text_rect)
 
-    # Desenhar caminho atual do jogador
+    # Desenhar caminho atual sendo construído
     current_color = get_current_player_color()
     for i in range(len(path_selected)-1):
         pygame.draw.line(screen, current_color, positions[path_selected[i]], positions[path_selected[i+1]], 5)
 
-    # Desenhar nós
+    # Desenhar nós com cores específicas
     for node, pos in positions.items():
         is_selected = node in path_selected
         is_start = node == start_node
@@ -288,7 +296,7 @@ def draw_game():
         info_text = FONT.render(path_info, True, current_color)
         screen.blit(info_text, (20, 140))
 
-    # Mostrar mensagem
+    # Mostrar mensagem de feedback
     if message:
         msg_surface = FONT.render(message, True, WHITE)
         msg_rect = msg_surface.get_rect()
@@ -301,6 +309,7 @@ def draw_game():
     pygame.display.flip()
 
 def draw_comparison():
+    """Desenha a tela de comparação dos caminhos dos dois jogadores"""
     screen.fill((20, 20, 40))
     draw_hud()
 
@@ -308,12 +317,11 @@ def draw_comparison():
     for u, v_node in G.edges():
         pygame.draw.line(screen, GRAY, positions[u], positions[v_node], 2)
 
-    # Desenhar caminho do Jogador 1
+    # Desenhar ambos os caminhos simultaneamente
     if game_state.player1_path:
         for i in range(len(game_state.player1_path)-1):
             pygame.draw.line(screen, BLUE, positions[game_state.player1_path[i]], positions[game_state.player1_path[i+1]], 4)
 
-    # Desenhar caminho do Jogador 2
     if game_state.player2_path:
         for i in range(len(game_state.player2_path)-1):
             pygame.draw.line(screen, PINK, positions[game_state.player2_path[i]], positions[game_state.player2_path[i+1]], 4)
@@ -339,7 +347,7 @@ def draw_comparison():
         text_rect = text.get_rect(center=pos)
         screen.blit(text, text_rect)
 
-    # Mostrar comparação
+    # COMPARAÇÃO DOS RESULTADOS
     y_offset = 140
     
     # Jogador 1
@@ -354,7 +362,7 @@ def draw_comparison():
     screen.blit(FONT.render(p2_text, True, PINK), (20, y_offset + 60))
     screen.blit(FONT.render(p2_damage_text, True, PINK), (20, y_offset + 85))
     
-    # Resultado
+    # Resultado da rodada
     if game_state.round_winner > 0:
         winner_color = BLUE if game_state.round_winner == 1 else PINK
         winner_text = f"VENCEDOR: Jogador {game_state.round_winner}! Dano causado: {game_state.damage_dealt}"
@@ -368,6 +376,7 @@ def draw_comparison():
     pygame.display.flip()
 
 def draw_game_over():
+    """Desenha a tela de fim de jogo"""
     screen.fill((20, 20, 40))
     overlay = pygame.Surface((WIDTH, HEIGHT))
     overlay.set_alpha(200)
@@ -407,6 +416,7 @@ def draw_game_over():
     pygame.display.flip()
 
 def get_node_clicked(pos):
+    """Detecta qual nó foi clicado baseado na posição do mouse"""
     for node, coord in positions.items():
         dist = math.hypot(pos[0] - coord[0], pos[1] - coord[1])
         if dist <= node_radius:
@@ -414,16 +424,18 @@ def get_node_clicked(pos):
     return None
 
 def check_time():
+    """Verifica se o tempo do turno esgotou"""
     elapsed = time.time() - game_state.start_time
     if elapsed >= TIME_LIMIT:
         return True
     return False
 
 def reset_timer():
+    """Reinicia o timer para o próximo turno"""
     game_state.start_time = time.time()
 
 def is_valid_path(path):
-    """Verificar se o caminho é válido (conectado e vai do início ao fim)"""
+    """Verifica se o caminho é válido (conectado e vai do início ao fim)"""
     if len(path) < 2:
         return False
     if path[0] != start_node or path[-1] != end_node:
@@ -435,14 +447,14 @@ def is_valid_path(path):
     return True
 
 def compare_paths():
-    """Comparar os caminhos dos dois jogadores e determinar vencedor"""
+    """FUNÇÃO CENTRAL: Compara os caminhos e determina o vencedor da rodada"""
     global message
     
-    # Calcular danos finais
+    # Calcular danos finais para ambos os jogadores
     game_state.player1_damage = calculate_final_damage(game_state.player1_path) if is_valid_path(game_state.player1_path) else 0
     game_state.player2_damage = calculate_final_damage(game_state.player2_path) if is_valid_path(game_state.player2_path) else 0
     
-    # Determinar vencedor
+    # Determinar vencedor (maior dano vence)
     if game_state.player1_damage > game_state.player2_damage:
         game_state.round_winner = 1
         game_state.damage_dealt = game_state.player1_damage
@@ -456,7 +468,7 @@ def compare_paths():
         game_state.damage_dealt = 0
 
 def next_turn():
-    """Passar para o próximo turno ou fase"""
+    """Gerencia a transição entre turnos"""
     global path_selected, message
     
     if game_state.state == PLAYER1_TURN:
@@ -477,10 +489,10 @@ def next_turn():
         message = "Comparando caminhos..."
 
 def start_new_round():
-    """Iniciar nova rodada"""
+    """Inicia uma nova rodada com pesos randomizados"""
     global message, path_selected
     
-    randomize_weights()
+    randomize_weights()  # Novos pesos aleatórios
     game_state.round_number += 1
     game_state.current_player = 1
     game_state.state = PLAYER1_TURN
@@ -495,6 +507,7 @@ def start_new_round():
     message = f"Rodada {game_state.round_number}! Turno do Jogador 1."
 
 def reset_game():
+    """Reinicia o jogo completamente"""
     global game_state, path_selected, message
     game_state = GameState()
     randomize_weights()
@@ -502,6 +515,7 @@ def reset_game():
     message = ""
 
 def start_game():
+    """Inicia o jogo a partir do menu"""
     global message
     game_state.state = PLAYER1_TURN
     game_state.current_player = 1
